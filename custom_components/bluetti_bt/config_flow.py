@@ -6,6 +6,7 @@ import logging
 from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.components import bluetooth  # Added this import
 from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
 )
@@ -14,10 +15,22 @@ from homeassistant.data_entry_flow import FlowResult
 from bluetti_bt_lib import recognize_device
 
 from .types import InitialDeviceConfig, ManufacturerData, OptionalDeviceConfig
-from .const import DOMAIN
+from .const import DOMAIN, CONF_DEVICE_TYPE
 
 _LOGGER = logging.getLogger(__name__)
 
+DEVICE_OPTIONS = [
+    "Auto Detect",
+    "AC2P",
+    "AC2A",
+    "EB3A",
+    "AC200M",
+    "AC300",
+    "AC500",
+    "EP500",
+    "EP600",
+    "EB70",
+]
 
 class BluettiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle config flow for Bluetti BT devices."""
@@ -61,23 +74,40 @@ class BluettiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle user input."""
-
-        # Handle click on "OK" button
+        
+        # 1. HANDLE FORM SUBMISSION
         if user_input is not None:
-            discovery_info = self._discovery_info
-            address = discovery_info.address
+            address = user_input[CONF_ADDRESS]
+            manual_type = user_input.get(CONF_DEVICE_TYPE, "Auto Detect")
+
+            # Find the discovery info again for the selected address
+            service_infos = bluetooth.async_discovered_service_info(self.hass)
+            discovery_info = next(
+                (service_info for service_info in service_infos if service_info.address == address),
+                self._discovery_info  # Fallback to existing info if available
+            )
+
+            if not discovery_info:
+                return self.async_abort(reason="device_not_found")
+
             await self.async_set_unique_id(address, raise_on_progress=False)
             self._abort_if_unique_id_configured()
+            
             name = re.sub("[^A-Z0-9]+", "", discovery_info.name)
 
             manufacturer_data = ManufacturerData.from_dict(
                 discovery_info.manufacturer_data
             )
+            
+            # <--- NEW: LOGIC TO OVERRIDE DEVICE TYPE
+            dev_type = manufacturer_data.dev_type
+            if manual_type != "Auto Detect":
+                dev_type = manual_type
 
             data = InitialDeviceConfig(
                 address,
                 name,
-                manufacturer_data.dev_type,
+                dev_type,  # Use the potentially overridden type
                 manufacturer_data.use_encryption,
             )
 
@@ -91,21 +121,28 @@ class BluettiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 },
             )
 
-        if not self._discovery_info:
-            return self.async_abort(reason="no_unconfigured_devices")
+        # 2. SCAN FOR DEVICES (If no input provided)
+        service_infos = bluetooth.async_discovered_service_info(self.hass)
+        choices = {}
+        
+        for discovery_info in service_infos:
+            name = discovery_info.name
+            # Filter for likely Bluetti devices
+            if name.startswith(("AC", "EB", "EP", "BLUETTI")):
+                choices[discovery_info.address] = f"{name} ({discovery_info.address})"
 
-        # The input from this is not used, we use the discovered and known working address
-        data_schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_ADDRESS,
-                    default=self._discovery_info.address,
-                ): str,
-            }
-        )
+        if not choices:
+            return self.async_abort(reason="no_devices_found")
+
+        # 3. SHOW FORM WITH DROPDOWNS
         return self.async_show_form(
             step_id="user",
-            data_schema=data_schema,
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_ADDRESS): vol.In(choices),
+                    vol.Optional(CONF_DEVICE_TYPE, default="Auto Detect"): vol.In(DEVICE_OPTIONS)
+                }
+            ),
         )
 
     @staticmethod
@@ -122,13 +159,19 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Manage the options."""
         if user_input is not None:
-            config = OptionalDeviceConfig.from_dict(user_input)
+            # 1. Extract the selected device type
+            manual_type = user_input.get(CONF_DEVICE_TYPE)
 
+            # 2. Handle existing optional config (polling, logging, etc.)
+            config = OptionalDeviceConfig.from_dict(user_input)
             reason = config.validate()
 
             if reason is not None:
                 return self.async_abort(reason=reason)
 
+            # 3. Update the entry
+            # We follow the existing pattern of updating 'data', 
+            # but we also return the new values to update 'options'.
             self.hass.config_entries.async_update_entry(
                 self.config_entry,
                 data={
@@ -136,14 +179,33 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     **config.as_dict,
                 },
             )
+            
+            # This saves the config to entry.options
             return self.async_create_entry(
                 title="",
-                data=config.as_dict,
+                data={
+                    **config.as_dict,
+                    CONF_DEVICE_TYPE: manual_type,  # Save the manual type to options
+                },
             )
 
+        # 4. Build the Schema
+        # Load existing defaults from data
         defaults = OptionalDeviceConfig.from_dict(self.config_entry.data)
+        
+        # Determine current device type
+        # Priority: Options (User Edit) -> Data (Initial Setup) -> Default
+        current_type = self.config_entry.options.get(
+            CONF_DEVICE_TYPE, 
+            self.config_entry.data.get(CONF_DEVICE_TYPE, "Auto Detect")
+        )
+
+        # Extend the schema to include the Device Type dropdown
+        schema = defaults.schema.extend({
+            vol.Optional(CONF_DEVICE_TYPE, default=current_type): vol.In(DEVICE_OPTIONS)
+        })
 
         return self.async_show_form(
             step_id="init",
-            data_schema=defaults.schema,
+            data_schema=schema,
         )

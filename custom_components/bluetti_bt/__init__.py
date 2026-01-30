@@ -18,7 +18,6 @@ from .const import (
     DATA_LOCK,
     DOMAIN,
     MANUFACTURER,
-    CONF_DEVICE_TYPE,  # Added this import
 )
 from .types import FullDeviceConfig
 from .coordinator import PollingCoordinator
@@ -39,24 +38,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if config is None:
         return False
 
-    # -------------------------------------------------------------------------
-    # NEW LOGIC: Override Device Type from Options
-    # -------------------------------------------------------------------------
-    # Check if the user has manually selected a device type in the options flow
-    manual_type = entry.options.get(CONF_DEVICE_TYPE)
-    
-    # If a manual type is set and isn't "Auto Detect", we force it here.
-    # Note: If it was set during initial setup, it's already in entry.data 
-    # and handled by from_dict above. This handles the 'Configure' menu updates.
-    if manual_type and manual_type != "Auto Detect":
-        config.dev_type = manual_type
-    # -------------------------------------------------------------------------
-
     logger = logging.getLogger(
         f"{__name__}.{mac_loggable(config.address).replace(':', '_')}"
     )
 
-    logger.debug(f"Init Bluetti BT Integration (Type: {config.dev_type})")
+    logger.debug("Init Bluetti BT Integration")
 
     if not bluetooth.async_address_present(hass, config.address):
         raise ConfigEntryNotReady("Bluetti device not present")
@@ -94,14 +80,6 @@ def device_info(entry: ConfigEntry):
 
     if config is None:
         return None
-
-    # -------------------------------------------------------------------------
-    # NEW LOGIC: Ensure Device Info reflects the manual override
-    # -------------------------------------------------------------------------
-    manual_type = entry.options.get(CONF_DEVICE_TYPE)
-    if manual_type and manual_type != "Auto Detect":
-        config.dev_type = manual_type
-    # -------------------------------------------------------------------------
 
     return DeviceInfo(
         identifiers={(DOMAIN, config.address)},

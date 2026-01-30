@@ -1,5 +1,6 @@
 from typing import Any, Dict
 
+from .const import CONF_DEVICE_TYPE
 from .InitialDeviceConfig import InitialDeviceConfig
 from .OptionalDeviceConfig import OptionalDeviceConfig
 
@@ -24,6 +25,10 @@ class FullDeviceConfig:
 
         if initial is None:
             return None
+
+        # 🔥 Manual override wins
+        if CONF_DEVICE_TYPE in raw:
+            initial.dev_type = raw[CONF_DEVICE_TYPE]
 
         return FullDeviceConfig(
             initial,

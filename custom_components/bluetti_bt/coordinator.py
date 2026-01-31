@@ -36,7 +36,7 @@ class PollingCoordinator(DataUpdateCoordinator):
 
         # Create client
         self.logger.info("Creating client for %s", config.name)
-        bluetti_device = build_device(config.name)
+        bluetti_device = build_device(config.dev_type)
 
         if bluetti_device is None:
             self.logger.error("Device is unknown type")

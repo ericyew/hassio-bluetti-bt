@@ -11,6 +11,7 @@ from bluetti_bt_lib import build_device, DeviceReader, DeviceReaderConfig
 
 from .utils import mac_loggable
 from .types import FullDeviceConfig
+from homeassistant.exceptions import ConfigEntryNotReady
 
 
 class PollingCoordinator(DataUpdateCoordinator):
@@ -35,13 +36,13 @@ class PollingCoordinator(DataUpdateCoordinator):
         self.config = config
 
         # Create client
-        self.logger.info("Creating client for %s", config.name)
+        self.logger.info("Creating client for %s", config.dev_type)
         bluetti_device = build_device(config.dev_type)
 
         if bluetti_device is None:
-            self.logger.error("Device is unknown type")
-            self.async_shutdown()
-            return None
+            raise ConfigEntryNotReady(
+                f"Unsupported Bluetti device type: {config.dev_type}"
+            )
 
         self.reader = DeviceReader(
             config.address,

@@ -14,7 +14,7 @@ from homeassistant.data_entry_flow import FlowResult
 from bluetti_bt_lib import recognize_device
 
 from .types import InitialDeviceConfig, ManufacturerData, OptionalDeviceConfig
-from .const import DOMAIN
+from .const import DOMAIN, CONF_DEVICE_TYPE
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -1,6 +1,6 @@
 from typing import Any, Dict
 
-from .const import CONF_DEVICE_TYPE
+from ..const import CONF_DEVICE_TYPE
 from .InitialDeviceConfig import InitialDeviceConfig
 from .OptionalDeviceConfig import OptionalDeviceConfig
 
